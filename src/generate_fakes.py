@@ -17,6 +17,7 @@ Each fake gets 1-3 random alterations at one random strength (low/medium/high):
 """
 import argparse
 import csv
+import json
 import random
 import string
 import sys
@@ -51,8 +52,22 @@ def color_shift(img: np.ndarray, t: float, rng: random.Random) -> np.ndarray:
     return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
 
 
-def pick_box(h: int, w: int, t: float, rng: random.Random):
-    """Central (50%) or random box; side is 15-40% of the image side, scaled by strength."""
+def pick_box(h: int, w: int, t: float, rng: random.Random, pill_box=None):
+    """Box for a localised alteration.
+
+    With a known pill box: centred on the pill (small jitter), sized 0.6-1.1x the pill
+    (at least 24 px) so the edit lands on the tablet face without wiping the whole pill. Without one: central (50%) or random
+    box, 15-40% of the image side, scaled by strength.
+    """
+    if pill_box is not None:
+        px1, py1, px2, py2 = pill_box
+        size = max(24, int(max(px2 - px1, py2 - py1) * (0.6 + 0.5 * t)))
+        size = min(size, w, h)
+        cx = (px1 + px2) / 2 + rng.uniform(-0.1, 0.1) * size
+        cy = (py1 + py2) / 2 + rng.uniform(-0.1, 0.1) * size
+        x1 = int(max(0, min(cx - size / 2, w - size)))
+        y1 = int(max(0, min(cy - size / 2, h - size)))
+        return x1, y1, x1 + size, y1 + size
     frac = 0.15 + 0.25 * t
     bw, bh = max(8, int(w * frac)), max(8, int(h * frac))
     if rng.random() < 0.5:
@@ -65,23 +80,32 @@ def pick_box(h: int, w: int, t: float, rng: random.Random):
     return x1, y1, x1 + bw, y1 + bh
 
 
-def blur_imprint(img: np.ndarray, t: float, rng: random.Random):
+def blur_imprint(img: np.ndarray, t: float, rng: random.Random, pill_box=None):
     h, w = img.shape[:2]
-    x1, y1, x2, y2 = pick_box(h, w, t, rng)
+    x1, y1, x2, y2 = pick_box(h, w, t, rng, pill_box)
     out = img.copy()
     if rng.random() < 0.5:
-        k = int(3 + 12 * t) | 1                                       # odd kernel
+        k = int(5 + 20 * t) | 1                                       # odd kernel, strong enough to erase print
         out[y1:y2, x1:x2] = cv2.GaussianBlur(img[y1:y2, x1:x2], (k, k), 0)
     else:
-        mask = np.zeros((h, w), np.uint8)
-        mask[y1:y2, x1:x2] = 255
-        out = cv2.inpaint(img, mask, 3, cv2.INPAINT_TELEA)
+        # Erase: fill with the median colour of the surrounding ring, feathered at the edge.
+        pad = max(4, (x2 - x1) // 4)
+        ox1, oy1, ox2, oy2 = max(0, x1 - pad), max(0, y1 - pad), min(w, x2 + pad), min(h, y2 + pad)
+        ring = img[oy1:oy2, ox1:ox2]
+        outside = np.ones(ring.shape[:2], bool)
+        outside[(y1 - oy1):(y2 - oy1), (x1 - ox1):(x2 - ox1)] = False
+        valid = ring[outside]
+        fill = np.median(valid, axis=0) if len(valid) else np.array([128, 128, 128])
+        mask = np.zeros((h, w), np.float32)
+        mask[y1:y2, x1:x2] = 1.0
+        mask = cv2.GaussianBlur(mask, (0, 0), max(1.5, (x2 - x1) / 12))[..., None]
+        out = (img * (1 - mask) + fill.reshape(1, 1, 3) * mask).astype(np.uint8)
     return out, (x1, y1, x2, y2)
 
 
-def wrong_text(img: np.ndarray, t: float, rng: random.Random):
+def wrong_text(img: np.ndarray, t: float, rng: random.Random, pill_box=None):
     h, w = img.shape[:2]
-    x1, y1, x2, y2 = pick_box(h, w, t, rng)
+    x1, y1, x2, y2 = pick_box(h, w, t, rng, pill_box)
     bw, bh = x2 - x1, y2 - y1
     text = "".join(rng.choice(string.ascii_uppercase + string.digits) for _ in range(rng.randint(2, 4)))
     try:
@@ -105,7 +129,8 @@ def wrong_text(img: np.ndarray, t: float, rng: random.Random):
     return np.array(base.convert("RGB")), (x1, y1, x2, y2)
 
 
-def shape_change(img: np.ndarray, t: float, rng: random.Random) -> np.ndarray:
+def shape_change(img: np.ndarray, t: float, rng: random.Random):
+    """Return (warped image, 3x3 matrix) so boxes can be mapped through the same warp."""
     h, w = img.shape[:2]
     sx = 1 + rng.choice((-1, 1)) * (0.03 + 0.12 * t) * rng.uniform(0.6, 1.0)
     sy = 1 + rng.choice((-1, 1)) * (0.03 + 0.12 * t) * rng.uniform(0.6, 1.0)
@@ -115,7 +140,17 @@ def shape_change(img: np.ndarray, t: float, rng: random.Random) -> np.ndarray:
     jit = (0.02 + 0.08 * t) * np.array([w, h], np.float32)
     dst += np.float32([[rng.uniform(-1, 1) * jit[0], rng.uniform(-1, 1) * jit[1]] for _ in range(4)])
     m = cv2.getPerspectiveTransform(src, dst)
-    return cv2.warpPerspective(img, m, (w, h), borderMode=cv2.BORDER_REPLICATE)
+    # Black border matches the dataset's own letterbox padding (no replicate-streak artefacts).
+    return cv2.warpPerspective(img, m, (w, h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0)), m
+
+
+def map_box(box, m, w, h):
+    x1, y1, x2, y2 = box
+    pts = np.float32([[[x1, y1]], [[x2, y1]], [[x2, y2]], [[x1, y2]]])
+    out = cv2.perspectiveTransform(pts, m).reshape(-1, 2)
+    nx1, ny1 = np.clip(out.min(axis=0), 0, [w - 1, h - 1])
+    nx2, ny2 = np.clip(out.max(axis=0), 0, [w - 1, h - 1])
+    return int(nx1), int(ny1), int(nx2), int(ny2)
 
 
 def noise_compression(img: np.ndarray, t: float, rng: random.Random, np_rng: np.random.RandomState) -> np.ndarray:
@@ -127,8 +162,11 @@ def noise_compression(img: np.ndarray, t: float, rng: random.Random, np_rng: np.
     return cv2.cvtColor(cv2.imdecode(buf, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
 
 
-def make_fake(img: np.ndarray, rng: random.Random, np_rng: np.random.RandomState):
-    """Return (fake_img, alteration_names, strength, bbox_or_None)."""
+def make_fake(img: np.ndarray, rng: random.Random, np_rng: np.random.RandomState, pill_box=None):
+    """Return (fake_img, alteration_names, strength, bbox_or_None).
+
+    pill_box (x1,y1,x2,y2) in the ORIGINAL image, if known, steers localised edits onto the pill.
+    """
     k = rng.randint(1, 3)
     chosen = rng.sample(ALTERATIONS, k)
     strength = rng.choice(list(STRENGTH_T))
@@ -137,12 +175,14 @@ def make_fake(img: np.ndarray, rng: random.Random, np_rng: np.random.RandomState
     boxes = []
     # Fixed order so bboxes stay valid: geometry first, local edits, then global colour/noise.
     if "shape_change" in chosen:
-        img = shape_change(img, t, rng)
+        img, m = shape_change(img, t, rng)
+        if pill_box is not None:
+            pill_box = map_box(pill_box, m, img.shape[1], img.shape[0])
     if "blur_imprint" in chosen:
-        img, box = blur_imprint(img, t, rng)
+        img, box = blur_imprint(img, t, rng, pill_box)
         boxes.append(box)
     if "wrong_text" in chosen:
-        img, box = wrong_text(img, t, rng)
+        img, box = wrong_text(img, t, rng, pill_box)
         boxes.append(box)
     if "color_shift" in chosen:
         img = color_shift(img, t, rng)
@@ -241,6 +281,11 @@ def main():
     if len(raw_files) < 10:
         sys.exit(f"Only {len(raw_files)} images in {args.raw_dir}. Add the Kaggle dataset and run clean_dataset.py first.")
 
+    boxes_file = args.raw_dir.parent / "raw_boxes.json"
+    pill_boxes = json.loads(boxes_file.read_text(encoding="utf-8")) if boxes_file.exists() else {}
+    print(f"Pill boxes available for {sum(n in pill_boxes for n in raw_files)}/{len(raw_files)} images"
+          if pill_boxes else "No raw_boxes.json: localised edits use random/central boxes")
+
     split_map = split_names(raw_files.keys(), config.SEED)
     print({s: len(v) for s, v in split_map.items()}, "genuine images per split")
     clear_outputs(args.out_dir)
@@ -253,7 +298,7 @@ def main():
             g_path = args.out_dir / split / "genuine" / f"{stem}.jpg"
             save_jpeg(arr, g_path)
 
-            fake, alts, strength, bbox = make_fake(arr, rng, np_rng)
+            fake, alts, strength, bbox = make_fake(arr, rng, np_rng, pill_boxes.get(name))
             f_rel = f"{split}/counterfeit/{stem}_fake.jpg"
             f_path = args.out_dir / f_rel
             save_jpeg(fake, f_path)

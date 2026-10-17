@@ -30,3 +30,6 @@ outputs/hashchain_log.csv
 Thumbs.db
 .vscode/
 .idea/
+
+# Derived dataset sidecar
+data/raw_boxes.json

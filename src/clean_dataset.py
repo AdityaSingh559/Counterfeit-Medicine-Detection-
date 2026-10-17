@@ -5,7 +5,7 @@ Usage:
 
 All surviving images are re-saved as RGB JPEG at a single fixed quality
 (one consistent pipeline, so file format is never a hint for the model).
-Images are written to data/raw/ as img_00001.jpg, ...; originals are removed.
+Images keep their original filename stem and become <stem>.jpg; originals are removed.
 """
 import argparse
 import hashlib
@@ -95,11 +95,17 @@ def main():
     tmp = raw.parent / "_raw_clean_tmp"
     tmp.mkdir(exist_ok=True)
     sizes = []
-    for i, p in enumerate(capped, start=1):
+    for p in capped:
+        # Keep the original stem (sidecar files such as raw_boxes.json key on it).
+        out = tmp / f"{p.stem}.jpg"
+        n = 1
+        while out.exists():
+            out = tmp / f"{p.stem}_{n}.jpg"
+            n += 1
         with Image.open(p) as im:
             im = im.convert("RGB")
             sizes.append(im.size)
-            im.save(tmp / f"img_{i:05d}.jpg", format="JPEG", quality=args.quality)
+            im.save(out, format="JPEG", quality=args.quality)
 
     for p in sorted(raw.rglob("*"), reverse=True):
         if p.is_file() and p.name != ".gitkeep":
