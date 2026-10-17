@@ -1,4 +1,4 @@
-Valid images found:   1100
+Valid images found:   1000
 Kept (cap 1000):    1000
 Removed: {'non_image': 0, 'corrupt': 0, 'too_small': 0, 'duplicate': 0}
 Width  min/median/max: 640 / 640 / 640

@@ -33,3 +33,5 @@ Thumbs.db
 
 # Derived dataset sidecar
 data/raw_boxes.json
+data/raw_groups.json
+data/_cache/

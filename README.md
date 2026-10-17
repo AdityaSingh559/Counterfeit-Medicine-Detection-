@@ -25,17 +25,23 @@ Fallback rule: if blockchain integration is not working after 2 days of effort, 
 
 ## Dataset
 
-Genuine class: a 1,000-image sample of **MEDISEG (32-pills subset)**, City, University of London, licensed **CC BY 4.0**.
-https://doi.org/10.25383/city.28574786.v2
+Genuine class (1,000 images = 600 pills + 400 medicine boxes), both CC BY 4.0:
 
-Reproduce the data (data/ is not committed):
+- **Pills:** MEDISEG (32-pills subset), City, University of London. https://doi.org/10.25383/city.28574786.v2
+- **Boxes:** Mobile-Captured Drug Packs, Mendeley Data (phone photos of drug packs). https://doi.org/10.17632/bsmy5jjysy.3
+
+Reproduce the data (`data/` is not committed):
 
 ```
 # 1. download MEDISEG.tar.gz from the figshare link above and extract it
-python src/import_mediseg.py --src <extracted>/MEDISEG/32pills   # samples 1100 distinct photos with a visible pill
-python src/clean_dataset.py                                      # cleans, standardises JPEG q95, caps at 1000
-python src/generate_fakes.py                                     # 70/15/15 split, simulated counterfeits, manifest
+python src/import_mediseg.py --src <extracted>/MEDISEG/32pills --n 600   # distinct photos with a visible pill
+python src/import_drugpacks.py --n 400 --per-group 5                     # downloads box photos (checksum-verified)
+python src/clean_dataset.py                                              # clean, standardise JPEG q95, cap 1000
+python src/generate_fakes.py                                             # 70/15/15 split, simulated counterfeits, manifest
 ```
 
-Counterfeits are **simulated** (colour shift, imprint blur/erase, wrong text, shape warp, noise/JPEG), and localised edits are
-placed on the annotated pill. Findings do not claim real-world counterfeit-detection performance.
+Counterfeits (pills **and** boxes) are **simulated** (colour shift, imprint/label blur or erase, wrong text, shape warp,
+noise/JPEG). Localised edits are placed on the annotated pill; for boxes they are placed inside the photo (no pack
+annotations exist, so some land on background). Box photos are split by pack group (same pack never in two splits;
+groups are inferred from capture time / file order, so this is approximate). Findings do not claim real-world
+counterfeit-detection performance.

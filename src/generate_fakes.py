@@ -52,15 +52,17 @@ def color_shift(img: np.ndarray, t: float, rng: random.Random) -> np.ndarray:
     return cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
 
 
-def pick_box(h: int, w: int, t: float, rng: random.Random, pill_box=None):
+def pick_box(h: int, w: int, t: float, rng: random.Random, target=None):
     """Box for a localised alteration.
 
-    With a known pill box: centred on the pill (small jitter), sized 0.6-1.1x the pill
-    (at least 24 px) so the edit lands on the tablet face without wiping the whole pill. Without one: central (50%) or random
-    box, 15-40% of the image side, scaled by strength.
+    target = {"box": (x1,y1,x2,y2), "tight": bool} from the sidecar, or None.
+    tight=True  (a pill): centred on it (small jitter), sized 0.6-1.1x the pill (>= 24 px), so the edit
+                lands on the tablet face without wiping the whole pill.
+    tight=False (a pack photo, box = the letterboxed photo region) or None (whole image): central (50%)
+                or random box inside the region, 15-40% of its sides, scaled by strength.
     """
-    if pill_box is not None:
-        px1, py1, px2, py2 = pill_box
+    if target is not None and target["tight"]:
+        px1, py1, px2, py2 = target["box"]
         size = max(24, int(max(px2 - px1, py2 - py1) * (0.6 + 0.5 * t)))
         size = min(size, w, h)
         cx = (px1 + px2) / 2 + rng.uniform(-0.1, 0.1) * size
@@ -68,21 +70,24 @@ def pick_box(h: int, w: int, t: float, rng: random.Random, pill_box=None):
         x1 = int(max(0, min(cx - size / 2, w - size)))
         y1 = int(max(0, min(cy - size / 2, h - size)))
         return x1, y1, x1 + size, y1 + size
+    rx1, ry1, rx2, ry2 = target["box"] if target is not None else (0, 0, w, h)
+    rx1, ry1, rx2, ry2 = max(0, rx1), max(0, ry1), min(w, rx2), min(h, ry2)
+    rw, rh = rx2 - rx1, ry2 - ry1
     frac = 0.15 + 0.25 * t
-    bw, bh = max(8, int(w * frac)), max(8, int(h * frac))
+    bw, bh = max(8, int(rw * frac)), max(8, int(rh * frac))
     if rng.random() < 0.5:
-        cx = int(w / 2 + rng.uniform(-0.1, 0.1) * w)
-        cy = int(h / 2 + rng.uniform(-0.1, 0.1) * h)
+        cx = int(rx1 + rw / 2 + rng.uniform(-0.1, 0.1) * rw)
+        cy = int(ry1 + rh / 2 + rng.uniform(-0.1, 0.1) * rh)
         x1, y1 = cx - bw // 2, cy - bh // 2
     else:
-        x1, y1 = rng.randint(0, max(0, w - bw)), rng.randint(0, max(0, h - bh))
-    x1, y1 = max(0, min(x1, w - bw)), max(0, min(y1, h - bh))
+        x1, y1 = rng.randint(rx1, max(rx1, rx2 - bw)), rng.randint(ry1, max(ry1, ry2 - bh))
+    x1, y1 = max(rx1, min(x1, rx2 - bw)), max(ry1, min(y1, ry2 - bh))
     return x1, y1, x1 + bw, y1 + bh
 
 
-def blur_imprint(img: np.ndarray, t: float, rng: random.Random, pill_box=None):
+def blur_imprint(img: np.ndarray, t: float, rng: random.Random, target=None):
     h, w = img.shape[:2]
-    x1, y1, x2, y2 = pick_box(h, w, t, rng, pill_box)
+    x1, y1, x2, y2 = pick_box(h, w, t, rng, target)
     out = img.copy()
     if rng.random() < 0.5:
         k = int(5 + 20 * t) | 1                                       # odd kernel, strong enough to erase print
@@ -103,9 +108,9 @@ def blur_imprint(img: np.ndarray, t: float, rng: random.Random, pill_box=None):
     return out, (x1, y1, x2, y2)
 
 
-def wrong_text(img: np.ndarray, t: float, rng: random.Random, pill_box=None):
+def wrong_text(img: np.ndarray, t: float, rng: random.Random, target=None):
     h, w = img.shape[:2]
-    x1, y1, x2, y2 = pick_box(h, w, t, rng, pill_box)
+    x1, y1, x2, y2 = pick_box(h, w, t, rng, target)
     bw, bh = x2 - x1, y2 - y1
     text = "".join(rng.choice(string.ascii_uppercase + string.digits) for _ in range(rng.randint(2, 4)))
     try:
@@ -162,10 +167,11 @@ def noise_compression(img: np.ndarray, t: float, rng: random.Random, np_rng: np.
     return cv2.cvtColor(cv2.imdecode(buf, cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
 
 
-def make_fake(img: np.ndarray, rng: random.Random, np_rng: np.random.RandomState, pill_box=None):
+def make_fake(img: np.ndarray, rng: random.Random, np_rng: np.random.RandomState, target=None):
     """Return (fake_img, alteration_names, strength, bbox_or_None).
 
-    pill_box (x1,y1,x2,y2) in the ORIGINAL image, if known, steers localised edits onto the pill.
+    target {"box": (x1,y1,x2,y2), "tight": bool} (in the ORIGINAL image), if known, steers localised
+    edits onto the pill (tight) or into the pack-photo region (not tight).
     """
     k = rng.randint(1, 3)
     chosen = rng.sample(ALTERATIONS, k)
@@ -176,13 +182,13 @@ def make_fake(img: np.ndarray, rng: random.Random, np_rng: np.random.RandomState
     # Fixed order so bboxes stay valid: geometry first, local edits, then global colour/noise.
     if "shape_change" in chosen:
         img, m = shape_change(img, t, rng)
-        if pill_box is not None:
-            pill_box = map_box(pill_box, m, img.shape[1], img.shape[0])
+        if target is not None:
+            target = {"box": map_box(target["box"], m, img.shape[1], img.shape[0]), "tight": target["tight"]}
     if "blur_imprint" in chosen:
-        img, box = blur_imprint(img, t, rng, pill_box)
+        img, box = blur_imprint(img, t, rng, target)
         boxes.append(box)
     if "wrong_text" in chosen:
-        img, box = wrong_text(img, t, rng, pill_box)
+        img, box = wrong_text(img, t, rng, target)
         boxes.append(box)
     if "color_shift" in chosen:
         img = color_shift(img, t, rng)
@@ -208,13 +214,23 @@ def save_jpeg(arr: np.ndarray, path: Path) -> None:
     Image.fromarray(arr).save(path, format="JPEG", quality=JPEG_QUALITY)
 
 
-def split_names(names, seed):
-    names = sorted(names)
-    random.Random(seed).shuffle(names)
-    n = len(names)
-    n_train = int(round(config.SPLIT[0] * n))
-    n_val = int(round(config.SPLIT[1] * n))
-    return {"train": names[:n_train], "val": names[n_train:n_train + n_val], "test": names[n_train + n_val:]}
+def split_names(names, seed, groups=None):
+    """70/15/15 split of image names. Images sharing a group id (same pack) always land in one split."""
+    groups = groups or {}
+    by_group = {}
+    for n in sorted(names):
+        by_group.setdefault(groups.get(n, n), []).append(n)
+    keys = sorted(by_group)
+    random.Random(seed).shuffle(keys)
+
+    total = len(names)
+    targets = {"train": config.SPLIT[0] * total, "val": config.SPLIT[1] * total, "test": config.SPLIT[2] * total}
+    split_map = {s: [] for s in SPLITS}
+    for key in keys:
+        # Put the whole group into the split furthest below its target share.
+        s = max(SPLITS, key=lambda sp: targets[sp] - len(split_map[sp]))
+        split_map[s] += by_group[key]
+    return split_map
 
 
 def clear_outputs(out_dir: Path):
@@ -246,13 +262,16 @@ def make_preview(rows, out_path: Path, tile: int = 256, n_pairs: int = 8):
     canvas.save(out_path)
 
 
-def run_assertions(out_dir: Path, split_map, manifest_rows):
-    # 1. No source image appears in two splits.
+def run_assertions(out_dir: Path, split_map, manifest_rows, groups=None):
+    groups = groups or {}
+    # 1. No source image (and no pack group) appears in two splits.
     sets = {s: set(v) for s, v in split_map.items()}
+    group_sets = {s: {groups.get(n, n) for n in v} for s, v in split_map.items()}
     for a in SPLITS:
         for b in SPLITS:
             if a < b:
                 assert not (sets[a] & sets[b]), f"leakage between {a} and {b}: {sets[a] & sets[b]}"
+                assert not (group_sets[a] & group_sets[b]), f"pack-group leakage between {a} and {b}"
     # 2. Counts match and classes are balanced, files exist.
     for s in SPLITS:
         g = [p for p in (out_dir / s / "genuine").iterdir() if p.is_file() and p.name != ".gitkeep"]
@@ -281,12 +300,15 @@ def main():
     if len(raw_files) < 10:
         sys.exit(f"Only {len(raw_files)} images in {args.raw_dir}. Add the Kaggle dataset and run clean_dataset.py first.")
 
-    boxes_file = args.raw_dir.parent / "raw_boxes.json"
-    pill_boxes = json.loads(boxes_file.read_text(encoding="utf-8")) if boxes_file.exists() else {}
-    print(f"Pill boxes available for {sum(n in pill_boxes for n in raw_files)}/{len(raw_files)} images"
-          if pill_boxes else "No raw_boxes.json: localised edits use random/central boxes")
+    # Optional sidecars written by import_mediseg.py / import_drugpacks.py (see their docstrings).
+    side = args.raw_dir.parent
+    boxes_file, groups_file = side / "raw_boxes.json", side / "raw_groups.json"
+    targets = json.loads(boxes_file.read_text(encoding="utf-8")) if boxes_file.exists() else {}
+    groups = json.loads(groups_file.read_text(encoding="utf-8")) if groups_file.exists() else {}
+    print(f"Targets (pill/pack boxes) for {sum(n in targets for n in raw_files)}/{len(raw_files)} images; "
+          f"{len(set(groups.values()))} pack groups")
 
-    split_map = split_names(raw_files.keys(), config.SEED)
+    split_map = split_names(raw_files.keys(), config.SEED, groups)
     print({s: len(v) for s, v in split_map.items()}, "genuine images per split")
     clear_outputs(args.out_dir)
 
@@ -298,7 +320,7 @@ def main():
             g_path = args.out_dir / split / "genuine" / f"{stem}.jpg"
             save_jpeg(arr, g_path)
 
-            fake, alts, strength, bbox = make_fake(arr, rng, np_rng, pill_boxes.get(name))
+            fake, alts, strength, bbox = make_fake(arr, rng, np_rng, targets.get(name))
             f_rel = f"{split}/counterfeit/{stem}_fake.jpg"
             f_path = args.out_dir / f_rel
             save_jpeg(fake, f_path)
@@ -312,8 +334,10 @@ def main():
                 "localized": str(bbox is not None).lower(),
                 "bbox": "" if bbox is None else ",".join(map(str, bbox)),
             })
-            if len(preview_rows) < 8 and split == "train":
-                preview_rows.append((g_path, f_path, bbox))
+            # Preview: 4 pill pairs + 4 box pairs from train.
+            kind_rows = [r for r in preview_rows if r[3] == stem.split("_")[0]]
+            if split == "train" and len(kind_rows) < 4 and stem.split("_")[0] in ("medi", "box"):
+                preview_rows.append((g_path, f_path, bbox, stem.split("_")[0]))
 
     manifest_path = args.out_dir / "fakes_manifest.csv"
     with open(manifest_path, "w", newline="", encoding="utf-8") as fh:
@@ -321,9 +345,12 @@ def main():
         w.writeheader()
         w.writerows(manifest_rows)
 
-    make_preview(preview_rows, args.preview_dir / "preview_grid.png")
-    run_assertions(args.out_dir, split_map, manifest_rows)
+    make_preview([r[:3] for r in preview_rows], args.preview_dir / "preview_grid.png")
+    run_assertions(args.out_dir, split_map, manifest_rows, groups)
 
+    for kind in ("medi", "box"):
+        k = [r for r in manifest_rows if r["source_filename"].startswith(kind + "_")]
+        print(f"  {kind}: {len(k)} fakes ({sum(r['localized'] == 'true' for r in k)} localised)")
     n_local = sum(r["localized"] == "true" for r in manifest_rows)
     print(f"Manifest: {manifest_path} ({len(manifest_rows)} fakes, {n_local} localised)")
     print(f"Preview:  {args.preview_dir / 'preview_grid.png'}")

@@ -6,7 +6,7 @@ Download MEDISEG.tar.gz from figshare and extract it first, then:
     python src/import_mediseg.py --src <extracted>/MEDISEG/32pills [--n 1100] [--min-pill 40]
 
 Why a sidecar: counterfeit simulation should alter the PILL, not random background.
-Writes data/raw_boxes.json  {filename: [x1, y1, x2, y2]} (the largest annotated pill).
+Writes data/raw_boxes.json  {filename: {"box": [x1, y1, x2, y2], "tight": true}} (largest annotated pill).
 Also de-duplicates Roboflow augmentations (same source photo, different '.rf.<hash>').
 """
 import argparse
@@ -53,13 +53,21 @@ def main():
     chosen = candidates[: args.n]
 
     config.RAW_DIR.mkdir(parents=True, exist_ok=True)
+    for old in config.RAW_DIR.glob("medi_*.jpg"):
+        old.unlink()
     boxes_out = {}
     for i, (fname, box) in enumerate(chosen):
         new = f"medi_{i:05d}.jpg"
         shutil.copy(args.src / "images" / fname, config.RAW_DIR / new)
-        boxes_out[new] = box
-    (config.DATA_DIR / "raw_boxes.json").write_text(json.dumps(boxes_out), encoding="utf-8")
-    print(f"Copied {len(chosen)} images to {config.RAW_DIR} and wrote data/raw_boxes.json")
+        boxes_out[new] = {"box": list(box), "tight": True}
+
+    # Merge into the shared sidecar (import_drugpacks.py owns the box_* keys).
+    path = config.DATA_DIR / "raw_boxes.json"
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    data = {k: v for k, v in data.items() if not k.startswith("medi_")}
+    data.update(boxes_out)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    print(f"Copied {len(chosen)} images to {config.RAW_DIR} and updated data/raw_boxes.json")
 
 
 if __name__ == "__main__":
