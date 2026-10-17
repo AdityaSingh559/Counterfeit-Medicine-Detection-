@@ -1,0 +1,32 @@
+﻿# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Node / Hardhat
+node_modules/
+blockchain/artifacts/
+blockchain/cache/
+
+# Data and models (large, not committed)
+data/raw/*
+data/train/*/*
+data/val/*/*
+data/test/*/*
+data/fakes_manifest.csv
+models/*.pt
+
+# Generated per deploy / per run
+contract.json
+outputs/heatmaps/*
+outputs/hashchain_log.csv
+
+# Keep folder placeholders
+!.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
