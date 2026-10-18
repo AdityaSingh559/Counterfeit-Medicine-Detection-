@@ -8,7 +8,7 @@ import numpy as np
 SEED = 42
 
 # --- Model / training ---
-IMG_SIZE = 160          # 224 is possible on GPU
+IMG_SIZE = 224          # plan: 160 on CPU, 224 on GPU (RTX 4060 available; small edits need the resolution)
 BATCH_SIZE = 32
 EPOCHS = 8
 LR = 1e-3

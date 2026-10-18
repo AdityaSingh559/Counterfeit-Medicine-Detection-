@@ -5,6 +5,9 @@ Usage:
 
 Order matters: genuine originals are split FIRST, then each split's fakes are
 derived only from that split's genuine images, so nothing leaks across splits.
+Output layout: data/{train,val,test}/<random id>.jpg is ONE MIXED POOL per split (genuine and
+counterfeit together, anonymous names). Ground truth is in data/labels.csv, used only to train and
+score the model; after testing, src/sort_images.py segregates a pool by the model's decision.
 Genuine and counterfeit images are both saved as RGB JPEG at the same quality,
 so file format / compression pipeline is not a hint for the model.
 
@@ -19,6 +22,7 @@ import argparse
 import csv
 import json
 import random
+import shutil
 import string
 import sys
 from pathlib import Path
@@ -36,6 +40,7 @@ ALTERATIONS = ["color_shift", "blur_imprint", "wrong_text", "shape_change", "noi
 LOCALIZED = {"blur_imprint", "wrong_text"}
 STRENGTH_T = {"low": 0.25, "medium": 0.6, "high": 1.0}
 SPLITS = ("train", "val", "test")
+LABEL_COLUMNS = ["filename", "split", "label", "source_filename", "kind", "group", "drug_id", "drug_name"]
 MANIFEST_COLUMNS = ["fake_filename", "source_filename", "split", "alterations", "strength", "localized", "bbox"]
 
 
@@ -234,13 +239,15 @@ def split_names(names, seed, groups=None):
 
 
 def clear_outputs(out_dir: Path):
+    """Empty data/<split>/ (mixed pools). Also removes the old genuine/ + counterfeit/ sub-folders."""
     for split in SPLITS:
-        for cls in ("genuine", "counterfeit"):
-            d = out_dir / split / cls
-            d.mkdir(parents=True, exist_ok=True)
-            for f in d.iterdir():
-                if f.is_file() and f.name != ".gitkeep":
-                    f.unlink()
+        d = out_dir / split
+        d.mkdir(parents=True, exist_ok=True)
+        for f in d.iterdir():
+            if f.is_dir():
+                shutil.rmtree(f)
+            elif f.name != ".gitkeep":
+                f.unlink()
 
 
 def make_preview(rows, out_path: Path, tile: int = 256, n_pairs: int = 8):
@@ -262,7 +269,7 @@ def make_preview(rows, out_path: Path, tile: int = 256, n_pairs: int = 8):
     canvas.save(out_path)
 
 
-def run_assertions(out_dir: Path, split_map, manifest_rows, groups=None):
+def run_assertions(out_dir: Path, split_map, manifest_rows, label_rows, groups=None):
     groups = groups or {}
     # 1. No source image (and no pack group) appears in two splits.
     sets = {s: set(v) for s, v in split_map.items()}
@@ -272,11 +279,18 @@ def run_assertions(out_dir: Path, split_map, manifest_rows, groups=None):
             if a < b:
                 assert not (sets[a] & sets[b]), f"leakage between {a} and {b}: {sets[a] & sets[b]}"
                 assert not (group_sets[a] & group_sets[b]), f"pack-group leakage between {a} and {b}"
-    # 2. Counts match and classes are balanced, files exist.
+    # 2. Each split is one mixed pool of anonymous files; labels.csv says which is which. Classes balanced.
+    names = [r["filename"] for r in label_rows]
+    assert len(set(names)) == len(names), "duplicate filenames"
     for s in SPLITS:
-        g = [p for p in (out_dir / s / "genuine").iterdir() if p.is_file() and p.name != ".gitkeep"]
-        c = [p for p in (out_dir / s / "counterfeit").iterdir() if p.is_file() and p.name != ".gitkeep"]
-        assert len(g) == len(c) == len(split_map[s]), f"{s}: genuine={len(g)} counterfeit={len(c)} expected={len(split_map[s])}"
+        files = [p for p in (out_dir / s).iterdir() if p.is_file() and p.name != ".gitkeep"]
+        assert all(p.is_file() for p in files) and not any(p.is_dir() for p in (out_dir / s).iterdir())
+        rows = [r for r in label_rows if r["split"] == s]
+        n_gen = sum(r["label"] == "genuine" for r in rows)
+        n_fake = sum(r["label"] == "counterfeit" for r in rows)
+        assert len(files) == len(rows) == 2 * len(split_map[s]), f"{s}: files={len(files)} labels={len(rows)}"
+        assert n_gen == n_fake == len(split_map[s]), f"{s}: genuine={n_gen} counterfeit={n_fake}"
+        assert all("fake" not in r["filename"] and "genuine" not in r["filename"] for r in rows), "label leaked into filename"
     # 3. Manifest completeness.
     assert len(manifest_rows) == sum(len(v) for v in split_map.values()), "manifest row count mismatch"
     for r in manifest_rows:
@@ -312,19 +326,41 @@ def main():
     print({s: len(v) for s, v in split_map.items()}, "genuine images per split")
     clear_outputs(args.out_dir)
 
-    manifest_rows, preview_rows = [], []
+    # Mixed pools: every file is <split>/<random id>.jpg, so neither folder nor name reveals the class.
+    # Ground truth lives in labels.csv (used only to train / score the model).
+    id_rng, used_ids = random.Random(config.SEED + 1), set()
+
+    def new_rel(split):
+        while True:
+            uid = f"{id_rng.getrandbits(40):010x}"
+            if uid not in used_ids:
+                used_ids.add(uid)
+                return f"{split}/{uid}.jpg"
+
+    manifest_rows, label_rows, preview_rows = [], [], []
     for split in SPLITS:
         for name in split_map[split]:
             arr = load_rgb(raw_files[name])
             stem = Path(name).stem
-            g_path = args.out_dir / split / "genuine" / f"{stem}.jpg"
+            kind = stem.split("_")[0]
+            g_rel = new_rel(split)
+            g_path = args.out_dir / g_rel
             save_jpeg(arr, g_path)
 
             fake, alts, strength, bbox = make_fake(arr, rng, np_rng, targets.get(name))
-            f_rel = f"{split}/counterfeit/{stem}_fake.jpg"
+            f_rel = new_rel(split)
             f_path = args.out_dir / f_rel
             save_jpeg(fake, f_path)
 
+            group = groups.get(name, name)
+            drug_id = (targets.get(name) or {}).get("drug_id", "")          # pills only
+            drug_name = (targets.get(name) or {}).get("drug_name", "")
+            label_rows.append({"filename": g_rel, "split": split, "label": "genuine",
+                               "source_filename": name, "kind": kind, "group": group,
+                               "drug_id": drug_id, "drug_name": drug_name})
+            label_rows.append({"filename": f_rel, "split": split, "label": "counterfeit",
+                               "source_filename": name, "kind": kind, "group": group,
+                               "drug_id": drug_id, "drug_name": drug_name})
             manifest_rows.append({
                 "fake_filename": f_rel,
                 "source_filename": name,
@@ -335,9 +371,8 @@ def main():
                 "bbox": "" if bbox is None else ",".join(map(str, bbox)),
             })
             # Preview: 4 pill pairs + 4 box pairs from train.
-            kind_rows = [r for r in preview_rows if r[3] == stem.split("_")[0]]
-            if split == "train" and len(kind_rows) < 4 and stem.split("_")[0] in ("medi", "box"):
-                preview_rows.append((g_path, f_path, bbox, stem.split("_")[0]))
+            if split == "train" and kind in ("medi", "box") and sum(r[3] == kind for r in preview_rows) < 4:
+                preview_rows.append((g_path, f_path, bbox, kind))
 
     manifest_path = args.out_dir / "fakes_manifest.csv"
     with open(manifest_path, "w", newline="", encoding="utf-8") as fh:
@@ -345,8 +380,15 @@ def main():
         w.writeheader()
         w.writerows(manifest_rows)
 
+    labels_path = args.out_dir / "labels.csv"
+    label_rows.sort(key=lambda r: r["filename"])          # sorted by random id: order carries no signal
+    with open(labels_path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=LABEL_COLUMNS)
+        w.writeheader()
+        w.writerows(label_rows)
+
     make_preview([r[:3] for r in preview_rows], args.preview_dir / "preview_grid.png")
-    run_assertions(args.out_dir, split_map, manifest_rows, groups)
+    run_assertions(args.out_dir, split_map, manifest_rows, label_rows, groups)
 
     for kind in ("medi", "box"):
         k = [r for r in manifest_rows if r["source_filename"].startswith(kind + "_")]

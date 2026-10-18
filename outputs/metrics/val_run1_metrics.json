@@ -1,0 +1,83 @@
+{
+  "n": 304,
+  "accuracy": 0.7861842105263158,
+  "roc_auc": 0.8536184210526315,
+  "counterfeit": {
+    "precision": 0.8849557522123894,
+    "recall": 0.6578947368421053,
+    "f1": 0.7547169811320755,
+    "support": 152
+  },
+  "genuine": {
+    "precision": 0.7277486910994765,
+    "recall": 0.9144736842105263,
+    "f1": 0.8104956268221575,
+    "support": 152
+  },
+  "confusion_matrix_[cf,gen]x[cf,gen]": [
+    [
+      100,
+      52
+    ],
+    [
+      13,
+      139
+    ]
+  ],
+  "by_kind": {
+    "box": {
+      "cf_recall": {
+        "n": 82,
+        "recall": 0.6585365853658537
+      },
+      "genuine_recall": 0.9146341463414634
+    },
+    "medi": {
+      "cf_recall": {
+        "n": 70,
+        "recall": 0.6571428571428571
+      },
+      "genuine_recall": 0.9142857142857143
+    }
+  },
+  "cf_recall_by_strength": {
+    "low": {
+      "n": 52,
+      "recall": 0.5
+    },
+    "medium": {
+      "n": 58,
+      "recall": 0.7068965517241379
+    },
+    "high": {
+      "n": 42,
+      "recall": 0.7857142857142857
+    }
+  },
+  "cf_recall_by_localized": {
+    "true": null,
+    "false": null
+  },
+  "cf_recall_by_alteration": {
+    "color_shift": {
+      "n": 58,
+      "recall": 0.6896551724137931
+    },
+    "blur_imprint": {
+      "n": 59,
+      "recall": 0.5932203389830508
+    },
+    "wrong_text": {
+      "n": 68,
+      "recall": 0.7647058823529411
+    },
+    "shape_change": {
+      "n": 68,
+      "recall": 0.7058823529411765
+    },
+    "noise_compression": {
+      "n": 59,
+      "recall": 0.864406779661017
+    }
+  }
+}

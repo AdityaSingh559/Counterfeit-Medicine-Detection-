@@ -1,0 +1,27 @@
+{
+  "baseline_colour_histogram": {
+    "auc": 0.5993423719652268,
+    "accuracy": 0.5906040268456376,
+    "cf_recall": 0.6040268456375839,
+    "auc_box": 0.5854756990054418,
+    "auc_medi": 0.631578947368421
+  },
+  "shortcut_file_features": {
+    "auc": 0.49551821990000444,
+    "accuracy": 0.4966442953020134,
+    "cf_recall": 0.7114093959731543,
+    "auc_box": 0.6278851566898105,
+    "auc_medi": 0.37274930747922436
+  },
+  "single_file_feature_auc": {
+    "file_size": 0.5044817800999954,
+    "bytes_per_pixel": 0.5044817800999954,
+    "width": 0.5,
+    "height": 0.5,
+    "jpeg_quant_mean": 0.5
+  },
+  "overfit_16": {
+    "final_loss": 6.981126716709696e-06,
+    "train_acc_on_16": 1.0
+  }
+}

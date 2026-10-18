@@ -11,10 +11,11 @@ blockchain/cache/
 
 # Data and models (large, not committed)
 data/raw/*
-data/train/*/*
-data/val/*/*
-data/test/*/*
+data/train/*
+data/val/*
+data/test/*
 data/fakes_manifest.csv
+data/labels.csv
 models/*.pt
 
 # Generated per deploy / per run
@@ -35,3 +36,8 @@ Thumbs.db
 data/raw_boxes.json
 data/raw_groups.json
 data/_cache/
+
+# Drug-ID dataset and sorter output (regenerated)
+data/drugid/
+outputs/sorted/
+models/*.pt
