@@ -1,0 +1,57 @@
+{
+  "n_localised_fakes": 95,
+  "fake": {
+    "mass": 0.20198371396659,
+    "chance": 0.058755139802631584,
+    "lift": 3.377143408865069,
+    "iou20": 0.19240900869420025,
+    "hit": 0.49473684210526314
+  },
+  "genuine_twin_control": {
+    "mass": 0.0471459589158832,
+    "lift": 0.7980881425642008,
+    "iou20": 0.052529753170182644,
+    "hit": 0.07368421052631578
+  },
+  "border": {
+    "fake_black_lift": 0.7139220522751267,
+    "twin_black_lift": 0.5412963709248974,
+    "fake_edge_lift": 0.6529691101024451,
+    "twin_edge_lift": 1.0371694158167841
+  },
+  "explainer": {
+    "method": "gradcam",
+    "layer": -1
+  },
+  "by_strength": {
+    "fake_iou20": {
+      "high": 0.379,
+      "low": 0.1,
+      "medium": 0.144
+    },
+    "fake_lift": {
+      "high": 3.915,
+      "low": 2.926,
+      "medium": 3.416
+    },
+    "fake_hit": {
+      "high": 0.846,
+      "low": 0.324,
+      "medium": 0.4
+    }
+  },
+  "by_kind": {
+    "fake_iou20": {
+      "box": 0.227,
+      "medi": 0.165
+    },
+    "fake_lift": {
+      "box": 3.374,
+      "medi": 3.38
+    },
+    "fake_hit": {
+      "box": 0.5,
+      "medi": 0.491
+    }
+  }
+}

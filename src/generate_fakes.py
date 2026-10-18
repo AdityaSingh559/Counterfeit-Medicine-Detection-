@@ -150,8 +150,12 @@ def shape_change(img: np.ndarray, t: float, rng: random.Random):
     jit = (0.02 + 0.08 * t) * np.array([w, h], np.float32)
     dst += np.float32([[rng.uniform(-1, 1) * jit[0], rng.uniform(-1, 1) * jit[1]] for _ in range(4)])
     m = cv2.getPerspectiveTransform(src, dst)
-    # Black border matches the dataset's own letterbox padding (no replicate-streak artefacts).
-    return cv2.warpPerspective(img, m, (w, h), borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0)), m
+
+    # Fill the corners the warp leaves empty with MIRRORED image content. A black wedge would be a
+    # shortcut ("black corner = fake": Grad-CAM was seen staring at such wedges), and zooming to hide it
+    # crops away the photo's own black bars, which is a second cue (fewer black pixels). Mirroring keeps
+    # the amount of black unchanged.
+    return cv2.warpPerspective(img, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101), m
 
 
 def map_box(box, m, w, h):

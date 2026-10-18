@@ -123,7 +123,7 @@ with tab_check:
 
         c1, c2, c3 = st.columns([2, 2, 2])
         c1.image(pil.convert("RGB"), caption=f"Original ({source_label})", width="stretch")
-        c2.image(overlay, caption="Grad-CAM heatmap: where the model saw evidence of a fake", width="stretch")
+        c2.image(overlay, caption="Heatmap: where the model saw evidence of a fake (warm = strong). A hint, not proof.", width="stretch")
         with c3:
             msg = {"FLAG": ("error", "🚩 FLAG: looks counterfeit"),
                    "APPROVE": ("success", "✅ APPROVE: looks genuine"),
@@ -225,6 +225,22 @@ with tab_results:
                                        "false alarms": f"{v['test_false_alarm_rate']:.0%}"} for k, v in sig.items()}).T)
         st.caption("Drug similarity adds weak evidence; fusing it with the CNN improves AUC slightly but raises false alarms.")
 
+    ev = read_json(METRICS / "explain_validation_test.json")
+    if ev:
+        st.subheader("Do the heatmaps point at the real edit?")
+        e = ev["explainer"]
+        st.caption(f"Checked on {ev['n_localised_fakes']} test fakes where the edit location is known (method: {e['method']}, "
+                   f"layer {e['layer']}, chosen on validation data only).")
+        a, b, c = st.columns(3)
+        a.metric("Hottest point inside the edit", f"{ev['fake']['hit']:.0%}",
+                 help="Share of fakes where the single hottest pixel falls inside the edited box.")
+        b.metric("Attention on the edit vs chance", f"{ev['fake']['lift']:.1f}x")
+        c.metric("Same spot on the genuine twin", f"{ev['genuine_twin_control']['hit']:.0%}", help="Control: should be low.")
+        gc = config.OUTPUTS_DIR / "gradcam" / "gradcam_cases.png"
+        if gc.exists():
+            with st.expander("Curated examples: fake caught, genuine passed, false alarm, fake missed (green box = real edit)"):
+                st.image(str(gc), width="stretch")
+
     sorted_csv = config.OUTPUTS_DIR / "sorted" / "sorted_report.csv"
     if sorted_csv.exists():
         r = pd.read_csv(sorted_csv)
@@ -245,9 +261,9 @@ with tab_status:
         ("2", "Environment (Python, Node, Hardhat, GPU)", "✅ Done"),
         ("3", "Dataset (MEDISEG pills + Mendeley drug boxes)", "✅ Done"),
         ("4", "Counterfeit simulation + leak-free splits", "✅ Done"),
-        ("5", "CNN training and evaluation", "✅ Done (recall 0.81, target 0.90)"),
+        ("5", "CNN training and evaluation", "✅ Done (fakes caught 85%, target 90%)"),
         ("+", "Drug identification and matching", "✅ Done (small gain)"),
-        ("6", "Explainability", "🟡 Heatmap only; overlap validation + SHAP/LIME to do"),
+        ("6", "Explainability", "✅ Heatmap + validation + figures done; SHAP/LIME comparison to do"),
         ("7", "Smart contract + tests", "⬜ Not started"),
         ("8", "Python-blockchain link + fallback", "⬜ Not started"),
         ("9", "Decision pipeline + threshold tuning", "🟡 Basic thresholds only"),

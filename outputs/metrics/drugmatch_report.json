@@ -3,7 +3,7 @@
   "n_test_pills": 152,
   "drug_id_top1_val": {
     "genuine": 0.9130434782608695,
-    "counterfeit": 0.8115942028985508,
+    "counterfeit": 0.7971014492753623,
     "n_known_drug_rows": 138,
     "n_unknown_drug_rows": 2
   },
@@ -15,27 +15,27 @@
   },
   "signals": {
     "cnn_only": {
-      "test_auc": 0.8973337950138504,
-      "threshold_from_val_at_10pct_false_alarm": 0.50639343,
+      "test_auc": 0.9027008310249307,
+      "threshold_from_val_at_10pct_false_alarm": 0.6306309,
       "test_false_alarm_rate": 0.07894736842105263,
       "test_counterfeit_recall": 0.8026315789473685
     },
     "drug_similarity_only": {
-      "test_auc": 0.7941481994459835,
+      "test_auc": 0.790685595567867,
       "threshold_from_val_at_10pct_false_alarm": -0.7929627299308777,
       "test_false_alarm_rate": 0.039473684210526314,
-      "test_counterfeit_recall": 0.19736842105263158
+      "test_counterfeit_recall": 0.18421052631578946
     },
     "fused_cnn+drug": {
-      "test_auc": 0.9066828254847645,
-      "threshold_from_val_at_10pct_false_alarm": -0.5890629538732194,
-      "test_false_alarm_rate": 0.13157894736842105,
+      "test_auc": 0.9103185595567868,
+      "threshold_from_val_at_10pct_false_alarm": -0.48943678608952323,
+      "test_false_alarm_rate": 0.09210526315789473,
       "test_counterfeit_recall": 0.8157894736842105
     }
   },
   "fusion_coef_[logit_cnn,similarity,drug_conf]": [
-    2.3522535372560194,
-    -0.4097929777596194,
-    -0.1525275836639437
+    2.619659654515817,
+    -0.3695194784299937,
+    -0.009033951662208155
   ]
 }
