@@ -45,3 +45,18 @@ noise/JPEG). Localised edits are placed on the annotated pill; for boxes they ar
 annotations exist, so some land on background). Box photos are split by pack group (same pack never in two splits;
 groups are inferred from capture time / file order, so this is approximate). Findings do not claim real-world
 counterfeit-detection performance.
+
+## Status and demo
+
+Done: Phases 1-5 (data, simulated counterfeits, MobileNetV2 classifier, sanity checks) plus drug identification/matching.
+Partly: Grad-CAM heatmap (overlap validation to do), thresholds, demo UI. Not started: smart contract and chain link (Phases 7-8).
+
+Test results (298 held-out images, simulated fakes): accuracy 88.3%, counterfeit recall 81.2% (plan target 90%), precision 94.5%, AUC 0.909.
+See `docs/Counterfeit_Medicine_Project_Progress.docx` for a plain-English walkthrough.
+
+Run the demo UI (needs the trained models in `models/`, produced by `src/train.py` and `src/train_drugid.py`):
+
+```
+venv\Scripts\streamlit run app.py        # http://localhost:8501
+python src/sort_images.py                # sort the mixed test pool into genuine / counterfeit / escalate
+```
